@@ -223,7 +223,14 @@ private:
     union converter {
         typedef typename atomic_rep<sizeof(value_type)>::word bits_type;
         converter(){}
+#if __cplusplus >= 202002L
+        // Templatize to avoid a volatile-qualified by-value parameter when
+        // value_type is cv-qualified (deprecated in C++20).
+        template<typename U>
+        converter(U a_value) : value(a_value) {}
+#else
         converter(value_type a_value) : value(a_value) {}
+#endif
         value_type value;
         bits_type bits;
     };

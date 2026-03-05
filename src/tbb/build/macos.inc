@@ -60,7 +60,7 @@ native_compiler := clang
 export compiler ?= clang
 debugger ?= lldb
 
-export stdlib ?= libc++
+export stdlib ?=
 
 CMD=$(SHELL) -c
 CWD=$(shell pwd)

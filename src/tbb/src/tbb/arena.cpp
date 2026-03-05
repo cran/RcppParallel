@@ -258,7 +258,9 @@ void arena::free_arena () {
     GATHER_STATISTIC( dump_arena_statistics() );
 #endif
     poison_value( my_guard );
+#if __TBB_COUNT_TASK_NODES
     intptr_t drained = 0;
+#endif
     for ( unsigned i = 0; i < my_num_slots; ++i ) {
         __TBB_ASSERT( !my_slots[i].my_scheduler, "arena slot is not empty" );
         // TODO: understand the assertion and modify
@@ -268,7 +270,11 @@ void arena::free_arena () {
 #if __TBB_STATISTICS
         NFS_Free( my_slots[i].my_counters );
 #endif /* __TBB_STATISTICS */
+#if __TBB_COUNT_TASK_NODES
         drained += mailbox(i+1).drain();
+#else
+        mailbox(i+1).drain();
+#endif
     }
     __TBB_ASSERT( my_task_stream.drain()==0, "Not all enqueued tasks were executed");
 #if __TBB_PREVIEW_CRITICAL_TASKS

@@ -1,4 +1,8 @@
 
+## RcppParallel 5.1.11-2
+
+* Resolved compilation warnings with C++20 and Apple clang 21.
+
 ## RcppParallel 5.1.11
 
 * Compatibility with LLVM 21.

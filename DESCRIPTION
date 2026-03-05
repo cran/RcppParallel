@@ -1,7 +1,7 @@
 Package: RcppParallel
 Type: Package
 Title: Parallel Programming Tools for 'Rcpp'
-Version: 5.1.11-1
+Version: 5.1.11-2
 Authors@R: c(
     person("JJ", "Allaire", role = c("aut"), email = "jj@rstudio.com"),
     person("Romain", "Francois", role = c("aut", "cph")),
@@ -34,7 +34,8 @@ Biarch: TRUE
 RoxygenNote: 7.1.1
 Encoding: UTF-8
 NeedsCompilation: yes
-Packaged: 2025-08-27 01:05:44 UTC; kevin
+Packaged: 2026-03-03 18:36:15 UTC; kevin
+Maintainer: Kevin Ushey <kevin@rstudio.com>
 Author: JJ Allaire [aut],
   Romain Francois [aut, cph],
   Kevin Ushey [aut, cre],
@@ -46,6 +47,5 @@ Author: JJ Allaire [aut],
   Intel [aut, cph] (Intel TBB library,
     https://www.threadingbuildingblocks.org/),
   Microsoft [cph]
-Maintainer: Kevin Ushey <kevin@rstudio.com>
 Repository: CRAN
-Date/Publication: 2025-08-27 07:30:10 UTC
+Date/Publication: 2026-03-05 12:20:09 UTC

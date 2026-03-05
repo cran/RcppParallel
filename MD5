@@ -1,6 +1,6 @@
-5fdf9d8ab40338729645640b095095c7 *DESCRIPTION
+78ddba045d5e7e54d9799410a8f23f82 *DESCRIPTION
 ac5bf58d5c93a8009b0a3b8ae1ecabba *NAMESPACE
-60325e9b96f95fbb2922ea7fe0dd79bc *NEWS.md
+ca396d2d6e295169b1ba28df6e0fa60c *NEWS.md
 4939bb891c20f17804b6d352c57c11d8 *R/RcppParallel-package.R
 a3ac253c981edd6f2fa1cb6d9b90490a *R/aaa.R
 5840541bf85bbc1a5cda5ee91b053b8c *R/flags.R
@@ -105,7 +105,7 @@ c7801e7c2acb9849352d5c16e24f49d9 *src/tbb/build/linux.pathcc.inc
 0e9053f26718011ae671aac46fff4c1c *src/tbb/build/macos.clang.inc
 3d1030b4ff424c81cde644d15167bc67 *src/tbb/build/macos.gcc.inc
 6121af624a98b96ceba938ff1b15996a *src/tbb/build/macos.icc.inc
-422f6eeca229509ea91a6452b0d96d5e *src/tbb/build/macos.inc
+d76b60667a54cabd7a48f67b1570dfa5 *src/tbb/build/macos.inc
 1b3ca11aca3b17c30b451ac93c3bb663 *src/tbb/build/mic.icc.inc
 0f735879789cdbd2d9d53d9a49a3f82f *src/tbb/build/mic.linux.inc
 94c973c22a8f1760bd3fcab099b9e423 *src/tbb/build/mic.linux.launcher.sh
@@ -146,7 +146,7 @@ d38a2b40e93d77f0f262e4096fb6bdde *src/tbb/include/serial/tbb/parallel_for.h
 1d8c400a5ce6edd32b1e7c772f874c58 *src/tbb/include/serial/tbb/tbb_annotate.h
 6574022a871577f2fda431c0f78a06e9 *src/tbb/include/tbb/aggregator.h
 3914e14fd9b037de85bc2281d69a6626 *src/tbb/include/tbb/aligned_space.h
-310ac60ddcdd6b3485d41e56a0c7f615 *src/tbb/include/tbb/atomic.h
+c3e9047e06ff3838fd1d3a63a2c9e098 *src/tbb/include/tbb/atomic.h
 91ebc46d80b4d73bb84cb7ff7512b5a1 *src/tbb/include/tbb/blocked_range.h
 f63c8cfca708a87b96b67b4b13bf2764 *src/tbb/include/tbb/blocked_range2d.h
 ad400bb9ed3296d3791d75d78e9323b0 *src/tbb/include/tbb/blocked_range3d.h
@@ -252,7 +252,7 @@ ffd12e342ce2f7a2230fcb9a3dd263db *src/tbb/include/tbb/task_scheduler_init.h
 ab6800bfe3e0024308d543a31ff0ce15 *src/tbb/include/tbb/task_scheduler_observer.h
 b1f3d29f6214053aaa5eb7310830eebb *src/tbb/include/tbb/tbb.h
 b4f25a3668e539e9452a1ace8c4b4153 *src/tbb/include/tbb/tbb_allocator.h
-5ba1b949d620998fe262208a90805d28 *src/tbb/include/tbb/tbb_config.h
+7cacd70af6d5a5e1db181dfe7033853a *src/tbb/include/tbb/tbb_config.h
 4ff7356cc547c606761bdc66b57c79eb *src/tbb/include/tbb/tbb_disable_exceptions.h
 ed53132edacc679b63fa3f99cdd4e884 *src/tbb/include/tbb/tbb_exception.h
 dd76c54281736d6440a080a13e80d204 *src/tbb/include/tbb/tbb_machine.h
@@ -336,7 +336,7 @@ ed7df8343ea5e8d7fde002ec182edb06 *src/tbb/src/rml/test/test_rml_omp.cpp
 01cf462ed73adb354adfdaf7da9fa5ea *src/tbb/src/rml/test/test_rml_tbb.cpp
 e3d697403acf8df7dc103115116e21de *src/tbb/src/rml/test/test_server.h
 53598c98d31be44f0883bfa6ddce661c *src/tbb/src/rml/test/test_thread_monitor.cpp
-0a16173746010fb55d403016c71216f3 *src/tbb/src/tbb/arena.cpp
+7318d94f9fa039c833289b5f6219a96e *src/tbb/src/tbb/arena.cpp
 af93653df09feabb859c0f938bb4c949 *src/tbb/src/tbb/arena.h
 e6b7eaf85fd4cf78acaa5a2a80a9f022 *src/tbb/src/tbb/cache_aligned_allocator.cpp
 f7f6af5e0f2501b9d9572219c59c079e *src/tbb/src/tbb/cilk-tbb-interop.h
