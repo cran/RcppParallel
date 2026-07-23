@@ -1,11 +1,33 @@
 
+## RcppParallel 6.0.0
+
+* RcppParallel no longer includes tbb headers as part of the RcppParallel/TBB.h
+  header, and instead only exposes its TBB-specific APIs for parallel work.
+  
+* RcppParallel now bundles oneTBB 2022.0.0. Note that the TBB ABI has changed;
+  packages which depend on RcppParallel may need to be rebuilt.
+  
+* On Windows, RcppParallel now uses the copy of TBB provided by Rtools.
+  If TBB is not available, RcppParallel will use only the fallback 'tinythread'
+  implementation. In practice, this implies that RcppParallel will now only
+  provide a TBB backend with R (>= 4.2.0).
+
+* Fixed builds under wasm/webR. (#237; @andrjohns)
+
+* Fixed compilation with clang-19 on Windows aarch64. (#235, #236; @andrjohns)
+
+* Fixed TBB library lookup on Windows, and removed the obsolete
+  `TBB_USE_GCC_BUILTINS` flag for Windows ARM64. TBB is statically linked
+  on Windows, so the package no longer tries to load TBB libraries there
+  at load time. (#241; @andrjohns)
+
 ## RcppParallel 5.1.11-2
 
 * Resolved compilation warnings with C++20 and Apple clang 21.
 
 ## RcppParallel 5.1.11
 
-* Compatibility with LLVM 21.
+* Compatibility fixes for LLVM 21.
 
 ## RcppParallel 5.1.10
 

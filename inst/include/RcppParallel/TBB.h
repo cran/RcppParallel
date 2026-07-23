@@ -7,6 +7,7 @@
 # define TBB_PREVIEW_GLOBAL_CONTROL 1
 #endif
 
+// For compatibility with existing packages on CRAN.
 #include "tbb/blocked_range.h"
 #include "tbb/concurrent_unordered_set.h"
 #include "tbb/concurrent_unordered_map.h"
@@ -17,6 +18,36 @@
 #include "tbb/parallel_reduce.h"
 #include "tbb/parallel_sort.h"
 #include "tbb/spin_mutex.h"
+
+// For compatibility with older R packages.
+namespace tbb {
+
+#ifndef __TBB_task_scheduler_init_H
+#define __TBB_task_scheduler_init_H
+
+class task_scheduler_init {
+   
+public:
+   task_scheduler_init(
+      int number_of_threads = -1,
+      std::size_t stack_size = 0)
+   {
+   }
+   
+   static int default_num_threads()
+   {
+      return 2;
+   }
+   
+   static const int automatic = -1;
+   static const int deferred = -2;
+ 
+};
+
+#endif
+
+} // end namespace tbb
+
 
 namespace RcppParallel {
 

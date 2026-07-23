@@ -7,6 +7,7 @@
 #include <tbb/tbb.h>
 #include <tbb/global_control.h>
 #include <tbb/scalable_allocator.h>
+#include <tbb/task_arena.h>
 
 namespace RcppParallel {
 
