@@ -1,7 +1,7 @@
 Package: RcppParallel
 Type: Package
 Title: Parallel Programming Tools for 'Rcpp'
-Version: 6.0.0
+Version: 6.1.0
 Authors@R: c(
     person("Kevin", "Ushey", role = c("aut", "cre"), email = "kevin@rstudio.com",
         comment = c(ORCID = "0000-0003-2880-7407")),
@@ -24,17 +24,17 @@ Description: High level functions for parallel programming with 'Rcpp'.
     a standard serial "for" loop into a parallel one and the 'parallelReduce()'
     function can be used for accumulating aggregate or other values.
 Depends: R (>= 3.6.0)
-Suggests: Rcpp, RUnit, knitr, rmarkdown
+Suggests: Rcpp, knitr, rmarkdown
 SystemRequirements: CMake (>= 3.5)
 License: GPL (>= 3)
 URL: https://rcppcore.github.io/RcppParallel/,
         https://github.com/RcppCore/RcppParallel
 BugReports: https://github.com/RcppCore/RcppParallel/issues
 Biarch: TRUE
-RoxygenNote: 7.3.2
+RoxygenNote: 7.3.3
 Encoding: UTF-8
 NeedsCompilation: yes
-Packaged: 2026-07-22 18:32:40 UTC; kevin
+Packaged: 2026-07-25 00:09:30 UTC; kevin
 Author: Kevin Ushey [aut, cre] (ORCID: <https://orcid.org/0000-0003-2880-7407>),
   JJ Allaire [aut],
   Romain Francois [aut, cph],
@@ -50,4 +50,4 @@ Author: Kevin Ushey [aut, cre] (ORCID: <https://orcid.org/0000-0003-2880-7407>),
   Posit, PBC [cph]
 Maintainer: Kevin Ushey <kevin@rstudio.com>
 Repository: CRAN
-Date/Publication: 2026-07-23 11:10:02 UTC
+Date/Publication: 2026-07-25 22:50:02 UTC

@@ -38,15 +38,22 @@
    if (!nzchar(tbbLib)) {
 
       # using bundled TBB
+      tbbSrc <- "tbb/build/lib_release"
       tbbLibs <- list.files(
-         path       = "tbb/build/lib_release",
+         path       = tbbSrc,
          pattern    = shlibPattern,
          full.names = TRUE
       )
 
+      logTbbLibraries(tbbLibs, tbbSrc)
       for (tbbLib in tbbLibs) {
          system2("cp", c("-P", shQuote(tbbLib), shQuote(tbbDest)))
       }
+
+      # restore the versioned library layout shipped by RcppParallel 5.1.11
+      # and earlier (a real 'libtbb.so.2' plus a 'libtbb.so' symlink)
+      if (Sys.info()[["sysname"]] == "Linux")
+         versionBundledTbbLibraries(tbbDest)
 
    } else {
 
@@ -61,6 +68,7 @@
       tbbLibs <- tbbLibs[!nzchar(Sys.readlink(tbbLibs))]
 
       # copy / link the libraries
+      logTbbLibraries(tbbLibs, tbbLib)
       useSymlinks <- Sys.getenv("TBB_USE_SYMLINKS", unset = .Platform$OS.type != "windows")
       if (useSymlinks) {
          file.symlink(tbbLibs, tbbDest)
@@ -73,21 +81,177 @@
    }
 
    # on Windows, we create a stub library that links to us so that
-   # older binaries (like rstan) can still load
-   if (.Platform$OS.type == "windows") {
+   # older binaries (like rstan) can still load. this is only relevant
+   # when TBB is available: the stub cannot link without it, and old
+   # TBB-using binaries could not run against a TBB-less RcppParallel
+   # regardless
+   if (.Platform$OS.type == "windows" && TBB_ENABLED) {
       tbbDll <- file.path(tbbDest, "tbb.dll")
-      if (!file.exists(tbbDll)) {
-         writeLines("** creating tbb stub library")
-         status <- system("R CMD SHLIB -o tbb-compat/tbb.dll tbb-compat/tbb-compat.cpp")
-         if (status != 0)
-            stop("error building tbb stub library")
-         file.copy("tbb-compat/tbb.dll", file.path(tbbDest, "tbb.dll"))
+      if (file.exists(tbbDll)) {
+         writeLines("** tbb.dll already exists; skipping tbb.dll stub")
+      } else {
+         buildTbbStub(tbbDest)
       }
    }
 
 }
 
+# Build the tbb.dll stub that downstream packages link ('-ltbb' via e.g.
+# StanHeaders) and that older binaries resolve their imports against.
+buildTbbStub <- function(tbbDest) {
+
+   # remove artifacts from prior builds, which may have been produced
+   # by a different toolchain or against a different TBB; 'make' would
+   # otherwise consider them up-to-date and re-ship them as-is
+   unlink(c("tbb-compat/tbb.dll", Sys.glob("tbb-compat/*.o")))
+
+   tbbInc <- Sys.getenv("TBB_INC")
+   if (!nzchar(tbbInc))
+      tbbInc <- TBB_INC
+
+   if (file.exists(file.path(tbbInc, "oneapi"))) {
+
+      # with oneTBB, the stub provides the old TBB ABI's
+      # task_scheduler_observer entry point on top of the new runtime
+      writeLines("** creating tbb.dll stub (wrapping the oneTBB runtime)")
+      status <- system("R CMD SHLIB -o tbb-compat/tbb.dll tbb-compat/tbb-compat.cpp")
+      if (status != 0)
+         stop("error building tbb.dll stub")
+
+   } else {
+
+      # with older versions of TBB (e.g. Rtools42), tbb-compat.cpp cannot
+      # build -- there is no oneTBB runtime to wrap -- but the static
+      # library already provides the old ABI, so re-export it wholesale
+      writeLines("** creating tbb.dll stub (re-exporting the static tbb library)")
+
+      tbbLib <- Sys.getenv("TBB_LIB")
+      if (!nzchar(tbbLib))
+         tbbLib <- TBB_LIB
+
+      cxx <- system("R CMD config CXX", intern = TRUE)
+      archive <- file.path(tbbLib, sprintf("lib%s.a", TBB_NAME))
+      command <- paste(
+         cxx,
+         "-shared -static-libgcc",
+         "-o tbb-compat/tbb.dll",
+         "-Wl,--whole-archive", shQuote(archive), "-Wl,--no-whole-archive",
+         "-lssp"
+      )
+
+      writeLines(command)
+      status <- system(command)
+      if (status != 0)
+         stop("error building tbb.dll stub")
+
+   }
+
+   file.copy("tbb-compat/tbb.dll", file.path(tbbDest, "tbb.dll"))
+
+}
+
+# Give the bundled TBB libraries the versioned '.so.<N>' names, plus an
+# unversioned 'libtbb.so' compatibility symlink, that RcppParallel shipped on
+# Linux through 5.1.11. That layout came from Intel TBB's make-based build,
+# which set the library SONAME from TBB_COMPATIBLE_INTERFACE_VERSION (2) and
+# emitted 'libtbb.so' as a linker script pointing at 'libtbb.so.2'. The
+# oneTBB cmake build only versions its output on Windows, so on Linux it
+# produces unversioned libraries (e.g. 'libtbb.so' with SONAME 'libtbb.so')
+# instead. Binaries compiled against RcppParallel <= 5.1.11 recorded a
+# load-time dependency on 'libtbb.so.2'; without this, they fail to load after
+# an upgrade with "libtbb.so.2: cannot open shared object file".
+versionBundledTbbLibraries <- function(tbbDest) {
+
+   # downstream binaries look for exactly '.so.2', matching the SONAME suffix
+   # the old TBB build derived from TBB_COMPATIBLE_INTERFACE_VERSION
+   suffix <- "2"
+
+   libs <- list.files(tbbDest, pattern = "^libtbb.*\\.so$", full.names = TRUE)
+   for (lib in libs)
+      versionBundledTbbLibrary(lib, paste0(lib, ".", suffix))
+
+}
+
+# Version a single bundled TBB library. Failing to produce the versioned
+# layout is an error: a partial or silently-skipped layout would only
+# resurface later as load failures in downstream binaries, so fail the
+# install loudly instead.
+versionBundledTbbLibrary <- function(lib, versioned) {
+
+   # leave symlinks (i.e. an already-versioned layout) untouched; only real,
+   # unversioned libraries need renaming
+   if (nzchar(Sys.readlink(lib)))
+      return(invisible(FALSE))
+
+   # only version actual ELF libraries; this leaves linker scripts alone
+   # (in old-style layouts, 'libtbb.so' is an INPUT() script and the real
+   # library already sits at 'libtbb.so.2'), while still replacing a stale
+   # 'libtbb.so.2' left behind by a previous installation
+   if (!isElfFile(lib))
+      return(invisible(FALSE))
+
+   fmt <- "** versioning tbb library '%s' -> '%s'"
+   msg <- sprintf(fmt, basename(lib), basename(versioned))
+   writeLines(msg)
+
+   # 'libtbb.so' -> 'libtbb.so.2'
+   if (!isTRUE(file.rename(lib, versioned))) {
+      fmt <- "couldn't rename '%s' to '%s'"
+      stop(sprintf(fmt, lib, versioned))
+   }
+
+   # re-create 'libtbb.so' as a relative symlink pointing back at the
+   # versioned library
+   linked <- tryCatch(
+      file.symlink(basename(versioned), lib),
+      warning = function(w) FALSE
+   )
+   if (isTRUE(linked))
+      return(invisible(TRUE))
+
+   # if the symlink couldn't be created (e.g. a filesystem without symlink
+   # support), fall back to a plain copy so that 'libtbb.so' still exists.
+   # the library has already been renamed at this point, so a failed copy
+   # would leave no 'libtbb.so' at all; fail loudly rather than complete a
+   # broken install
+   writeLines("** couldn't create symlink; copying instead")
+   copied <- tryCatch(
+      file.copy(versioned, lib, overwrite = TRUE),
+      warning = function(w) FALSE
+   )
+   if (!isTRUE(copied)) {
+      fmt <- "couldn't copy '%s' to '%s'"
+      stop(sprintf(fmt, versioned, lib))
+   }
+
+   invisible(TRUE)
+
+}
+
+isElfFile <- function(path) {
+   header <- tryCatch(
+      readBin(path, "raw", n = 4L),
+      condition = function(cnd) raw()
+   )
+   identical(header, charToRaw("\x7fELF"))
+}
+
+# Report which TBB libraries are about to be installed, and from where.
+# Stale or unexpected libraries copied here have historically been a
+# subtle source of load failures in downstream packages, so make the
+# provenance easy to spot in installation logs.
+logTbbLibraries <- function(tbbLibs, source) {
+   if (length(tbbLibs)) {
+      fmt <- "** copying tbb runtime libraries from '%s' [%s]"
+      writeLines(sprintf(fmt, source, paste(basename(tbbLibs), collapse = ", ")))
+   } else {
+      writeLines(sprintf("** no tbb runtime libraries found in '%s'", source))
+   }
+}
+
 useTbbPreamble <- function(tbbInc) {
+
+   writeLines(sprintf("** copying tbb headers from '%s'", tbbInc))
    dir.create("../inst/include", recursive = TRUE, showWarnings = FALSE)
    for (suffix in c("oneapi", "serial", "tbb")) {
       tbbPath <- file.path(tbbInc, suffix)
@@ -95,6 +259,57 @@ useTbbPreamble <- function(tbbInc) {
          file.copy(tbbPath, "../inst/include", recursive = TRUE)
       }
    }
+
+   invisible(patchTbbMachineHeader("../inst/include/oneapi/tbb/detail/_machine.h"))
+
+}
+
+# Guard the '#include <intrin.h>' in TBB's _machine.h against GCC's
+# <cpuid.h> macro on mingw. The headers we ship may come from Rtools
+# rather than from the bundled copy of oneTBB, so the guard must be
+# applied to the copied headers, not just the bundled sources.
+patchTbbMachineHeader <- function(path) {
+
+   if (!file.exists(path)) {
+      writeLines(sprintf("** no tbb header at '%s'; skipping mingw cpuid guard", path))
+      return(invisible())
+   }
+
+   contents <- readLines(path)
+   if (any(grepl("push_macro", contents, fixed = TRUE))) {
+      writeLines(sprintf("** mingw cpuid guard already present in '%s'", path))
+      return(invisible())
+   }
+
+   index <- which(contents == "#include <intrin.h>")
+   if (length(index) != 1L) {
+      fmt <- paste(
+         "expected exactly one '#include <intrin.h>' line in '%s', but found %i;",
+         "the mingw cpuid guard was not applied, and mingw builds using these",
+         "headers may fail -- see patches/mingw_cpuid.diff"
+      )
+      warning(sprintf(fmt, path, length(index)))
+      return(invisible())
+   }
+
+   replacement <- c(
+      "// GCC's <cpuid.h> defines a function-like '__cpuid' macro that mangles the",
+      "// __cpuid() declarations in mingw's <intrin.h>. Hide the macro while",
+      "// including <intrin.h> so the two headers can coexist in any order.",
+      "#if defined(__MINGW32__) && defined(__cpuid)",
+      "#pragma push_macro(\"__cpuid\")",
+      "#undef __cpuid",
+      "#include <intrin.h>",
+      "#pragma pop_macro(\"__cpuid\")",
+      "#else",
+      "#include <intrin.h>",
+      "#endif"
+   )
+
+   contents <- append(contents[-index], replacement, after = index - 1L)
+   writeLines(contents, path)
+   writeLines(sprintf("** applied mingw cpuid guard to '%s'", path))
+
 }
 
 useSystemTbb <- function(tbbLib, tbbInc) {
@@ -116,12 +331,23 @@ useBundledTbb <- function() {
    prependFlags("CPPFLAGS", "CFLAGS")
    prependFlags("CPPFLAGS", "CXXFLAGS")
 
+   # the ucontext APIs (getcontext, swapcontext, ...) are deprecated on macOS,
+   # so use the threads-based coroutine implementation for resumable tasks
+   if (Sys.info()[["sysname"]] == "Darwin") {
+      flags <- c(Sys.getenv("CXXFLAGS"), "-D__TBB_RESUMABLE_TASKS_USE_THREADS=1")
+      setenv("CXXFLAGS", flags[nzchar(flags)])
+   }
+
    cmakeFlags <- c(
       forwardEnvVar("CC", "CMAKE_C_COMPILER"),
       forwardEnvVar("CXX", "CMAKE_CXX_COMPILER"),
       forwardEnvVar("CFLAGS", "CMAKE_C_FLAGS"),
       forwardEnvVar("CXXFLAGS", "CMAKE_CXX_FLAGS"),
       forwardEnvVar("CMAKE_BUILD_TYPE", "CMAKE_BUILD_TYPE"),
+      # tbbbind requires hwloc, and hwloc's pkg-config file doesn't advertise
+      # the macOS frameworks needed when linking it statically; RcppParallel
+      # doesn't use TBB's NUMA APIs, so skip tbbbind altogether
+      "-DTBB_DISABLE_HWLOC_AUTOMATIC_SEARCH=1",
       "-DTBB_TEST=0",
       "-DTBB_EXAMPLES=0",
       "-DTBB_STRICT=0",
@@ -185,6 +411,10 @@ useBundledTbb <- function() {
       full.names = TRUE
    )
 
+   # clear any artifacts from prior builds, so that we only ship
+   # the libraries produced by the build above
+   unlink("tbb/build/lib_release", recursive = TRUE)
+
    dir.create("tbb/build/lib_release", recursive = TRUE, showWarnings = FALSE)
    file.copy(tbbFiles, "tbb/build/lib_release", overwrite = TRUE)
    unlink("tbb/build-tbb", recursive = TRUE)
@@ -213,9 +443,13 @@ splitCompilerVar <- function(compilerVar, flagsVar) {
       return(FALSE)
 
    tokens <- scan(text = compiler, what = character(), quiet = TRUE)
-   if (length(tokens) < 2L)
+   if (length(tokens) == 0L)
       return(FALSE)
 
+   # always re-set the compiler from the parsed tokens, even when there are
+   # no trailing flags: scan() strips surrounding whitespace, so this also
+   # normalizes values like ' g++' (produced when e.g. '$(CCACHE) g++'
+   # expands with an empty CCACHE), which CMake would otherwise reject
    setenv(compilerVar, tokens[[1L]])
 
    oldFlags <- Sys.getenv(flagsVar)
@@ -268,6 +502,15 @@ if (identical(args, "build")) {
       useBundledTbb()
    }
 } else {
+
+   # prefer the configure-detected TBB_LIB when the environment variable
+   # is unset; otherwise, e.g. on Windows (where configure detects the
+   # Rtools copy of TBB), we'd wrongly take the bundled-TBB branch below,
+   # and ship any stale artifacts present in tbb/build/lib_release
    source("../R/tbb-autodetected.R")
+   if (!nzchar(tbbLib))
+      tbbLib <- TBB_LIB
+
    .install.libs(tbbLib)
+
 }

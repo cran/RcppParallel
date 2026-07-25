@@ -11,19 +11,41 @@
 .tbbMallocProxyDllInfo <- NULL
 
 loadTbbLibrary <- function(name) {
-   # TBB is statically linked on Windows
+
+   # On Windows, TBB is statically linked into RcppParallel.dll, but we
+   # still ship a stub tbb.dll for compatibility with packages linking via
+   # '-ltbb' (e.g. through StanHeaders). Such packages record a load-time
+   # dependency on 'tbb.dll', which the Windows loader can only resolve if
+   # we've already loaded it -- the library directory itself is not on the
+   # DLL search path.
    if (is_windows()) {
-      return(NULL)
+
+      # NOTE: resolve against the package's own library directory, where
+      # install.libs.R places the stub; tbbRoot() would prefer TBB_LIB,
+      # which on Windows points at Rtools and holds only static libraries
+      path <- archSystemFile("lib", paste0(name, ".dll"))
+      if (!file.exists(path)) {
+         verboseMessage("tbb library '%s' not found in package 'lib' folder; skipping", name)
+         return(NULL)
+      }
+
+      verboseMessage("loading tbb library '%s'", path)
+      return(dyn.load(path, local = FALSE, now = TRUE))
+
    }
+
    path <- tbbLibraryPath(name)
-   if (is.null(path))
-      return(NULL)
-   
-   if (!file.exists(path)) {
-      warning("TBB library ", shQuote(name), " not found.")
+   if (is.null(path)) {
+      verboseMessage("tbb library '%s' could not be resolved; skipping", name)
       return(NULL)
    }
-   
+
+   if (!file.exists(path)) {
+      warning("tbb library ", shQuote(name), " not found.")
+      return(NULL)
+   }
+
+   verboseMessage("loading tbb library '%s'", path)
    dyn.load(path, local = FALSE, now = TRUE)
    
 }

@@ -1,4 +1,21 @@
 
+# opt-in diagnostics, primarily useful when debugging issues with
+# TBB library resolution and loading during package load; uses the
+# same VERBOSE environment variable as the TBB build in install.libs.R
+verboseMessage <- function(fmt, ...) {
+   verbose <- Sys.getenv("VERBOSE", unset = "0")
+   if (!identical(verbose, "0"))
+      message(sprintf(fmt, ...))
+}
+
+# like system.file(), but injects the architecture-specific subdirectory
+# used on Windows when set; e.g. archSystemFile("lib") resolves 'lib/x64'
+archSystemFile <- function(dir, name = NULL) {
+   arch <- .Platform$r_arch
+   parts <- c(dir, if (nzchar(arch)) arch, name)
+   system.file(paste(parts, collapse = "/"), package = "RcppParallel")
+}
+
 # generate paths consumable by the compilers and linkers
 # in particular, on Windows and Solaris, this means the path _cannot_ be quoted !!
 asBuildPath <- function(path) {
