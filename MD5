@@ -1,6 +1,6 @@
-d618c5a1bb32b0532bd6f4856022be31 *DESCRIPTION
+5817ddbed47879bffa4a51157da43c49 *DESCRIPTION
 aeb102cea7ddbe68d158e524fadd3eba *NAMESPACE
-74470e6aaec5d2a0d4969ae46239eec4 *NEWS.md
+faf2f169c7bc308c93a73cf0eec3ed46 *NEWS.md
 4939bb891c20f17804b6d352c57c11d8 *R/RcppParallel-package.R
 3faadb852c03e51ab51aef9d05c196ef *R/aaa.R
 5840541bf85bbc1a5cda5ee91b053b8c *R/flags.R
@@ -388,4 +388,4 @@ c471d2a004853cf248fac8a2f4317358 *tests/test-fork.R
 d4b9365b9aadffe9a37d128c100b010d *tests/test-truefalse-macros.R
 447c8872e235f31a7428d4b6aa724a0e *tools/config.R
 bbef13ac6672f00a82c4f3a223f3a894 *tools/config/cleanup.R
-f9c11c9175d354a1f251a75a40427c73 *tools/config/configure.R
+da0de6ac83abde4c0b94875a14cd2b1a *tools/config/configure.R
