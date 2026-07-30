@@ -318,10 +318,13 @@ void __TBB_EXPORTED_FUNC observe(d1::task_scheduler_observer &tso, bool enable) 
 } // namespace detail
 } // namespace tbb
 
+// The pre-oneTBB ABI, provided so that binaries built against RcppParallel
+// 5.1.11 and earlier still resolve their imports. Declared (and, on mingw,
+// exported) in oneapi/tbb/task_scheduler_observer.h.
 namespace tbb {
 namespace internal {
 
-void __TBB_EXPORTED_FUNC task_scheduler_observer_v3::observe( bool enable ) {
+void __TBB_EXPORTED_METHOD task_scheduler_observer_v3::observe( bool enable ) {
     auto* tso = (tbb::detail::d1::task_scheduler_observer*) (this);
     tbb::detail::r1::observe(*tso, enable);
 }

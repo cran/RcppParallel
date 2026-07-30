@@ -80,74 +80,6 @@
 
    }
 
-   # on Windows, we create a stub library that links to us so that
-   # older binaries (like rstan) can still load. this is only relevant
-   # when TBB is available: the stub cannot link without it, and old
-   # TBB-using binaries could not run against a TBB-less RcppParallel
-   # regardless
-   if (.Platform$OS.type == "windows" && TBB_ENABLED) {
-      tbbDll <- file.path(tbbDest, "tbb.dll")
-      if (file.exists(tbbDll)) {
-         writeLines("** tbb.dll already exists; skipping tbb.dll stub")
-      } else {
-         buildTbbStub(tbbDest)
-      }
-   }
-
-}
-
-# Build the tbb.dll stub that downstream packages link ('-ltbb' via e.g.
-# StanHeaders) and that older binaries resolve their imports against.
-buildTbbStub <- function(tbbDest) {
-
-   # remove artifacts from prior builds, which may have been produced
-   # by a different toolchain or against a different TBB; 'make' would
-   # otherwise consider them up-to-date and re-ship them as-is
-   unlink(c("tbb-compat/tbb.dll", Sys.glob("tbb-compat/*.o")))
-
-   tbbInc <- Sys.getenv("TBB_INC")
-   if (!nzchar(tbbInc))
-      tbbInc <- TBB_INC
-
-   if (file.exists(file.path(tbbInc, "oneapi"))) {
-
-      # with oneTBB, the stub provides the old TBB ABI's
-      # task_scheduler_observer entry point on top of the new runtime
-      writeLines("** creating tbb.dll stub (wrapping the oneTBB runtime)")
-      status <- system("R CMD SHLIB -o tbb-compat/tbb.dll tbb-compat/tbb-compat.cpp")
-      if (status != 0)
-         stop("error building tbb.dll stub")
-
-   } else {
-
-      # with older versions of TBB (e.g. Rtools42), tbb-compat.cpp cannot
-      # build -- there is no oneTBB runtime to wrap -- but the static
-      # library already provides the old ABI, so re-export it wholesale
-      writeLines("** creating tbb.dll stub (re-exporting the static tbb library)")
-
-      tbbLib <- Sys.getenv("TBB_LIB")
-      if (!nzchar(tbbLib))
-         tbbLib <- TBB_LIB
-
-      cxx <- system("R CMD config CXX", intern = TRUE)
-      archive <- file.path(tbbLib, sprintf("lib%s.a", TBB_NAME))
-      command <- paste(
-         cxx,
-         "-shared -static-libgcc",
-         "-o tbb-compat/tbb.dll",
-         "-Wl,--whole-archive", shQuote(archive), "-Wl,--no-whole-archive",
-         "-lssp"
-      )
-
-      writeLines(command)
-      status <- system(command)
-      if (status != 0)
-         stop("error building tbb.dll stub")
-
-   }
-
-   file.copy("tbb-compat/tbb.dll", file.path(tbbDest, "tbb.dll"))
-
 }
 
 # Give the bundled TBB libraries the versioned '.so.<N>' names, plus an
@@ -325,6 +257,13 @@ useBundledTbb <- function() {
    buildType <- Sys.getenv("CMAKE_BUILD_TYPE", unset = "Release")
    verbose <- Sys.getenv("VERBOSE", unset = "0")
 
+   # pull any leading compiler launcher (e.g. ccache) out of CC / CXX before
+   # splitting, so it can be forwarded to CMake the way CMake expects it (see
+   # extractCompilerLauncher); otherwise ccache would be treated as the
+   # compiler itself, breaking CMake's compiler / assembler probes
+   ccLauncher  <- extractCompilerLauncher("CC")
+   cxxLauncher <- extractCompilerLauncher("CXX")
+
    splitCompilerVar("CC", "CFLAGS")
    splitCompilerVar("CXX", "CXXFLAGS")
 
@@ -341,6 +280,10 @@ useBundledTbb <- function() {
    cmakeFlags <- c(
       forwardEnvVar("CC", "CMAKE_C_COMPILER"),
       forwardEnvVar("CXX", "CMAKE_CXX_COMPILER"),
+      if (!is.na(ccLauncher))
+         sprintf("-DCMAKE_C_COMPILER_LAUNCHER=%s", ccLauncher),
+      if (!is.na(cxxLauncher))
+         sprintf("-DCMAKE_CXX_COMPILER_LAUNCHER=%s", cxxLauncher),
       forwardEnvVar("CFLAGS", "CMAKE_C_FLAGS"),
       forwardEnvVar("CXXFLAGS", "CMAKE_CXX_FLAGS"),
       forwardEnvVar("CMAKE_BUILD_TYPE", "CMAKE_BUILD_TYPE"),
@@ -359,6 +302,19 @@ useBundledTbb <- function() {
          "-DEMSCRIPTEN=1",
          "-DTBBMALLOC_BUILD=0",
          "-DBUILD_SHARED_LIBS=0",
+         cmakeFlags
+      )
+   }
+
+   # on Windows the generator has to be named explicitly, as cmake otherwise
+   # prefers a Visual Studio generator when one happens to be installed. TBB is
+   # built shared here, as on every other platform: upstream does not support
+   # static builds ("highly discouraged", per its own configure-time warning),
+   # and a shared library is what lets RcppParallel and downstream packages
+   # share one runtime rather than each linking a private copy
+   if (.Platform$OS.type == "windows") {
+      cmakeFlags <- c(
+         "-G", "MSYS Makefiles",
          cmakeFlags
       )
    }
@@ -392,16 +348,18 @@ useBundledTbb <- function() {
    }
    setwd(owd)
 
-   shlibPattern <- switch(
-      Sys.info()[["sysname"]],
-      Windows = "^tbb.*\\.dll$",
-      Darwin  = "^libtbb.*\\.dylib$",
+   # on wasm TBB is built as a static library, so collect the archives; on
+   # Windows collect the DLLs together with their import libraries, so that
+   # linking RcppParallel against them below can go through 'libtbb.dll.a'
+   # rather than relying on the linker accepting the DLL directly
+   shlibPattern <- if (R.version$os == "emscripten") {
+      "^libtbb.*\\.a$"
+   } else if (.Platform$OS.type == "windows") {
+      "^(lib)?tbb.*\\.dll(\\.a)?$"
+   } else if (Sys.info()[["sysname"]] == "Darwin") {
+      "^libtbb.*\\.dylib$"
+   } else {
       "^libtbb.*\\.so.*$"
-   )
-
-   # WASM only supports static libraries
-   if (R.version$os == "emscripten") {
-      shlibPattern <- "^libtbb.*\\.a$"
    }
 
    tbbFiles <- list.files(
@@ -431,6 +389,33 @@ setenv <- function(key, value) {
    args <- list(paste(value, collapse = " "))
    names(args) <- key
    do.call(Sys.setenv, args)
+}
+
+
+# Compiler launchers such as ccache are commonly injected by prefixing the
+# compiler (e.g. CXX='ccache g++'). CMake models these via the separate
+# CMAKE_<LANG>_COMPILER_LAUNCHER variable rather than as part of the compiler
+# command, so detect a leading launcher, strip it from the compiler variable,
+# and return it for forwarding. Returns NA when no launcher is present.
+extractCompilerLauncher <- function(compilerVar) {
+
+   compiler <- Sys.getenv(compilerVar, unset = NA)
+   if (is.na(compiler))
+      return(NA_character_)
+
+   tokens <- scan(text = compiler, what = character(), quiet = TRUE)
+   if (length(tokens) == 0L)
+      return(NA_character_)
+
+   launcher <- tokens[[1L]]
+   name <- sub("[.]exe$", "", basename(launcher), ignore.case = TRUE)
+   if (!name %in% c("ccache", "sccache"))
+      return(NA_character_)
+
+   # drop the launcher, leaving the real compiler (and any flags) behind
+   setenv(compilerVar, tokens[-1L])
+   launcher
+
 }
 
 
@@ -496,17 +481,15 @@ args <- commandArgs(trailingOnly = TRUE)
 if (identical(args, "build")) {
    if (nzchar(tbbLib) && nzchar(tbbInc)) {
       useSystemTbb(tbbLib, tbbInc)
-   } else if (.Platform$OS.type == "windows") {
-      writeLines("** building RcppParallel without tbb backend")
    } else {
       useBundledTbb()
    }
 } else {
 
-   # prefer the configure-detected TBB_LIB when the environment variable
-   # is unset; otherwise, e.g. on Windows (where configure detects the
-   # Rtools copy of TBB), we'd wrongly take the bundled-TBB branch below,
-   # and ship any stale artifacts present in tbb/build/lib_release
+   # prefer the configure-detected TBB_LIB when the environment variable is
+   # unset; otherwise a TBB configured via TBB_ROOT (which sets TBB_LIB only in
+   # the generated tbb-autodetected.R) would wrongly take the bundled-TBB
+   # branch below, and ship any stale artifacts in tbb/build/lib_release
    source("../R/tbb-autodetected.R")
    if (!nzchar(tbbLib))
       tbbLib <- TBB_LIB

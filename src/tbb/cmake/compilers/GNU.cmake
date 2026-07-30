@@ -47,19 +47,44 @@ endif()
 # >=2.31.1). Capturing the output in CMake can be done like below. The version
 # information is written to either stdout or stderr. To not make any
 # assumptions, both are captured.
+
+# Probe with a real (empty) source file rather than the null device. A mingw
+# build driven by a native Windows CMake (rather than cross-compiled from a
+# POSIX host) has no '/dev/null', and the compiler would fail with "no input
+# files"; an actual file avoids having to spell the null device per platform.
+set(_tbb_asm_probe_source ${CMAKE_BINARY_DIR}/CMakeFiles/tbb_asm_probe.c)
+set(_tbb_asm_probe_object ${CMAKE_BINARY_DIR}/CMakeFiles/tbb_asm_probe.o)
+file(WRITE ${_tbb_asm_probe_source} "")
+
 execute_process(
-    COMMAND ${CMAKE_COMMAND} -E env "LANG=C" ${CMAKE_CXX_COMPILER} -xc -c /dev/null -Wa,-v -o/dev/null
+    COMMAND ${CMAKE_COMMAND} -E env "LANG=C" ${CMAKE_CXX_COMPILER} -xc -c ${_tbb_asm_probe_source} -Wa,-v -o ${_tbb_asm_probe_object}
     OUTPUT_VARIABLE ASSEMBLER_VERSION_LINE_OUT
     ERROR_VARIABLE ASSEMBLER_VERSION_LINE_ERR
     OUTPUT_STRIP_TRAILING_WHITESPACE
     ERROR_STRIP_TRAILING_WHITESPACE
 )
+
+file(REMOVE ${_tbb_asm_probe_source} ${_tbb_asm_probe_object})
+unset(_tbb_asm_probe_source)
+unset(_tbb_asm_probe_object)
 set(ASSEMBLER_VERSION_LINE ${ASSEMBLER_VERSION_LINE_OUT}${ASSEMBLER_VERSION_LINE_ERR})
 string(REGEX REPLACE ".*GNU assembler version ([0-9]+)\\.([0-9]+).*" "\\1" _tbb_gnu_asm_major_version "${ASSEMBLER_VERSION_LINE}")
 string(REGEX REPLACE ".*GNU assembler version ([0-9]+)\\.([0-9]+).*" "\\2" _tbb_gnu_asm_minor_version "${ASSEMBLER_VERSION_LINE}")
 unset(ASSEMBLER_VERSION_LINE_OUT)
 unset(ASSEMBLER_VERSION_LINE_ERR)
 unset(ASSEMBLER_VERSION_LINE)
+
+# When the version can't be parsed, the REGEX REPLACE calls above leave the
+# whole (unmatched) probe output behind, which math() below cannot evaluate.
+# Treat that as an assembler too old for waitpkg rather than failing the
+# configure outright -- the probe is only an optimization guard.
+if (NOT _tbb_gnu_asm_major_version MATCHES "^[0-9]+$" OR
+    NOT _tbb_gnu_asm_minor_version MATCHES "^[0-9]+$")
+    message(STATUS "Could not determine the GNU assembler version; assuming it predates waitpkg support")
+    set(_tbb_gnu_asm_major_version 0)
+    set(_tbb_gnu_asm_minor_version 0)
+endif()
+
 message(TRACE "Extracted GNU assembler version: major=${_tbb_gnu_asm_major_version} minor=${_tbb_gnu_asm_minor_version}")
 
 math(EXPR _tbb_gnu_asm_version_number  "${_tbb_gnu_asm_major_version} * 1000 + ${_tbb_gnu_asm_minor_version}")
@@ -73,6 +98,16 @@ endif()
 
 set(TBB_COMMON_LINK_LIBS ${CMAKE_DL_LIBS})
 
+# Local addition: on mingw the helpers for -fstack-protector-strong and
+# _FORTIFY_SOURCE (__stack_chk_fail, __stack_chk_guard, __strncpy_chk, ...)
+# live in libssp rather than libgcc, and older toolchains (Rtools42 / gcc 10)
+# do not pull it in implicitly. It has to go here, with the link libraries,
+# rather than in the linker flags: those are emitted before the objects, and
+# GNU ld only resolves symbols already undefined when it reaches a library.
+if (MINGW)
+    set(TBB_COMMON_LINK_LIBS ${TBB_COMMON_LINK_LIBS} ssp)
+endif()
+
 # Ignore -Werror set through add_compile_options() or added to CMAKE_CXX_FLAGS if TBB_STRICT is disabled.
 if (NOT TBB_STRICT AND COMMAND tbb_remove_compile_flag)
     tbb_remove_compile_flag(-Werror)
@@ -81,7 +116,14 @@ endif()
 if (NOT ${CMAKE_CXX_COMPILER_ID} STREQUAL Intel)
     # gcc 6.0 and later have -flifetime-dse option that controls elimination of stores done outside the object lifetime
     set(TBB_DSE_FLAG $<$<NOT:$<VERSION_LESS:${CMAKE_CXX_COMPILER_VERSION},6.0>>:-flifetime-dse=1>)
-    set(TBB_COMMON_COMPILE_FLAGS ${TBB_COMMON_COMPILE_FLAGS} $<$<NOT:$<VERSION_LESS:${CMAKE_CXX_COMPILER_VERSION},8.0>>:-fstack-clash-protection>)
+
+    # -fstack-clash-protection is broken on mingw's SEH targets: compiling
+    # task_dispatcher.h makes GCC 10 abort with "internal compiler error: in
+    # seh_emit_stackalloc, at config/i386/winnt.c". It is a hardening flag
+    # rather than a correctness one, so simply leave it off there.
+    if (NOT MINGW)
+        set(TBB_COMMON_COMPILE_FLAGS ${TBB_COMMON_COMPILE_FLAGS} $<$<NOT:$<VERSION_LESS:${CMAKE_CXX_COMPILER_VERSION},8.0>>:-fstack-clash-protection>)
+    endif()
 
     # Suppress GCC 12.x-13.x warning here that to_wait_node(n)->my_is_in_list might have size 0
     set(TBB_COMMON_LINK_FLAGS ${TBB_COMMON_LINK_FLAGS} $<$<AND:$<NOT:$<VERSION_LESS:${CMAKE_CXX_COMPILER_VERSION},12.0>>,$<VERSION_LESS:${CMAKE_CXX_COMPILER_VERSION},14.0>>:-Wno-stringop-overflow>)

@@ -24,7 +24,7 @@ tbbLibraryPath <- function(name = NULL) {
    # form library names
    tbbLibNames <- list(
       "Darwin"  = paste0("lib", name, ".dylib"),
-      "Windows" = paste0("lib", name, c("12", ""), ".a"),
+      "Windows" = paste0(name, ".dll"),
       "SunOS"   = paste0("lib", name, ".so"),
       "Linux"   = paste0("lib", name, c(".so.2", ".so"))
    )
@@ -85,16 +85,37 @@ tbbCxxFlags <- function() {
 # Return the linker flags required for TBB on this platform
 tbbLdFlags <- function() {
    
-   # on Windows, we statically link to oneTBB
+   # on Windows every symbol must be resolved at link time -- there is no
+   # equivalent of lazy binding or '-undefined dynamic_lookup' -- so a
+   # downstream package needs both the TBB libraries it calls into and
+   # RcppParallel itself, for the entry points we compile (e.g.
+   # isProcessForkedChild). elsewhere those resolve from the process at load
+   # time and only TBB needs naming
    if (is_windows()) {
-      
-      libPath <- archSystemFile("libs")
 
-      ldFlags <- sprintf("-L%s -lRcppParallel", asBuildPath(libPath))
+      libsPath <- archSystemFile("libs")
+      ldFlags <- sprintf("-L%s -lRcppParallel", asBuildPath(libsPath))
+
+      # only name the TBB libraries when there are TBB libraries to name;
+      # asking the linker for one that isn't there would fail the downstream
+      # build outright. configure always enables TBB, so this should not
+      # happen -- but a wrong answer here is only discovered by whoever is
+      # compiling against us, so check rather than assume
+      if (TBB_ENABLED && !is.null(tbbLibraryPath("tbb"))) {
+         fmt <- "%s -L%s -l%s -l%s"
+         ldFlags <- sprintf(
+            fmt,
+            ldFlags,
+            asBuildPath(tbbLibraryPath()),
+            TBB_NAME,
+            TBB_MALLOC_NAME
+         )
+      }
+
       return(ldFlags)
-      
+
    }
-   
+
    # shortcut if TBB_LIB defined
    tbbLib <- Sys.getenv("TBB_LINK_LIB", Sys.getenv("TBB_LIB", unset = TBB_LIB))
    if (nzchar(tbbLib)) {
@@ -108,8 +129,15 @@ tbbLdFlags <- function() {
    
    # explicitly link on macOS
    # https://github.com/RcppCore/RcppParallel/issues/206
+   #
+   # the bundled libraries record an '@rpath'-relative install name (e.g.
+   # '@rpath/libtbb.dylib'), so '-L' alone is not enough: the client library
+   # ends up with no runtime search path for TBB at all, and only loads
+   # because RcppParallel -- and hence TBB -- normally happens to be loaded
+   # into the process first. Emit a matching '-rpath' so the client can
+   # resolve TBB on its own. (#209)
    if (is_mac()) {
-      fmt <- "-L%s -l%s -l%s"
+      fmt <- "-L%1$s -Wl,-rpath,%1$s -l%2$s -l%3$s"
       return(sprintf(fmt, asBuildPath(tbbLibraryPath()), TBB_NAME, TBB_MALLOC_NAME))
    }
 
